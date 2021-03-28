@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html;charset=utf-8" >
+	<title>Maze</title>
+
+	<script id="firefly-vertex-shader" type="x-shader/x-vertex">
+	#version 300 es
+
+	in vec3 aPositionFirefly;
+	in vec3 aColorFirefly;
+	uniform mat4 transposeFirefly;
+	out vec4 vColorFirefly;
+
+	void
+	main()
+	{
+		gl_Position = transposeFirefly * vec4(aPositionFirefly, 1);
+		vColorFirefly = vec4(aColorFirefly, 1.0);
+	}
+	</script>
+
+	<script id="firefly-fragment-shader" type="x-shader/x-fragment">
+	#version 300 es
+	precision mediump float;
+
+	in vec4 vColorFirefly;
+	out vec4 fColorFirefly;
+
+	void
+	main()
+	{
+	    fColorFirefly = vColorFirefly;
+	}
+	</script>
+
+
+	<script src="./Common/initShaders.js"></script>
+	<script src="./Common/MVnew.js"></script>
+	<script src="firefly.js"></script>
+</head>
+
+<body>
+	<p>
+		#firefly: <input type="number" name="numFirefly" id="numFirefly" min="5" max="100" value="10">
+		<button onclick="buildAllDrawAll()">Reset!</button>
+	</p>
+	<canvas id="gl-canvas" width="850" height="850">
+	Oops ... your browser doesn't support the HTML5 canvas element
+	</canvas>
+
+</body>
+</html>
