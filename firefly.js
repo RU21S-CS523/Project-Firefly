@@ -17,9 +17,13 @@ const rotationFirefly = [];
 // config related
 let numFirefly = 5;
 
+
 //
 // tool functions
 //
+
+// compute homogeneous transpose matrix
+// (vec3(roll, pitch, yaw), vec3(x, y, z)) => mat4
 function getTransposeMat(tempRotation, tempTranslation) {
 	const zMat = rotateZ(tempRotation[2]);
 	const yMat = rotateY(tempRotation[1]);
@@ -28,10 +32,13 @@ function getTransposeMat(tempRotation, tempTranslation) {
 	return mult(tMat, mult(xMat, mult(yMat, zMat)));
 };
 
+
 //
 // modeling functions
 //
+
 // construct firefly model // TODO: modeling
+// float(0, 0.5] => void
 function getFireflyModel(sizeFirefly) {
 	positionsFirefly.length = 0;
 	colorsFirefly.length = 0;
@@ -84,7 +91,9 @@ function getFireflyModel(sizeFirefly) {
 //
 // init functions
 //
+
 // construct fireflies
+// void => void
 function buildFirefly() {
 	// firefly model
 	const sizeFirefly = 0.04;
@@ -112,7 +121,8 @@ function buildFirefly() {
 	return
 }
 
-
+// init shaders, bind buffers and send models
+// void => void
 function initDrawing() {
 	//  Load shaders and initialize attribute buffers
 
@@ -143,6 +153,8 @@ function initDrawing() {
 	return;
 };
 
+// reset drawing. response to button "Reset!"
+// void => void
 function buildAllDrawAll() {
 	buildFirefly();
 	//TODO: glowing
@@ -150,6 +162,9 @@ function buildAllDrawAll() {
 	return;
 };
 
+
+// init the whole program
+// void => void
 window.onload = function init() {
 	const canvas = document.getElementById("gl-canvas");
 	gl = canvas.getContext('webgl2');
@@ -170,6 +185,9 @@ window.onload = function init() {
 //
 // rendering function
 //
+
+// call webgl to draw a new frame
+// void => void
 function render() {
 	gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
