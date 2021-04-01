@@ -16,21 +16,47 @@ const rotationFirefly = [];
 
 // config related
 let numFirefly = 5;
-
+const frameSpeedMS = 33;
 
 //
 // tool functions
 //
 
-// compute homogeneous transpose matrix
-// (vec3(roll, pitch, yaw), vec3(x, y, z)) => mat4
-function getTransposeMat(tempRotation, tempTranslation) {
+// function sleep(ms) {
+//   return new Promise(resolve => setTimeout(resolve, ms));
+// }
+
+function getRotationMat(tempRotation) {
 	const zMat = rotateZ(tempRotation[2]);
 	const yMat = rotateY(tempRotation[1]);
 	const xMat = rotateX(tempRotation[0]);
+	return mult(xMat, mult(yMat, zMat));
+}
+
+// compute homogeneous transpose matrix
+// (vec3(roll, pitch, yaw), vec3(x, y, z)) => mat4
+function getTransposeMat(tempRotation, tempTranslation) {
 	const tMat = translate(tempTranslation[0], tempTranslation[1], tempTranslation[2]);
-	return mult(tMat, mult(xMat, mult(yMat, zMat)));
+	const rMat = getRotationMat(tempRotation)
+	return mult(tMat, rMat);
 };
+
+function randomRotate(tempRotation, rotationSpeed) {
+	let [tempRow, tempPitch, tempYaw] = tempRotation;
+	const rotationSpeed2 = rotationSpeed * 2;
+	tempRow = (tempRow + 450 + Math.random() * rotationSpeed2 - rotationSpeed) % 360 - 90;
+	tempPitch = (tempPitch + 450 + Math.random() * rotationSpeed2 - rotationSpeed) % 360 - 90;
+	tempYaw = (tempYaw + 360 + Math.random() * rotationSpeed2 - rotationSpeed) % 360;
+	return vec3(tempRow, tempPitch, tempYaw);
+};
+
+function randomTranslate(tempTranslation, tempRotation, translationSpeed) {
+	const rMat = getRotationMat(tempRotation);
+	const unitVec = vec4(0, 0, translationSpeed, 0);
+	const rotatedUniVec = mult(rMat, unitVec);
+	const translationDiff = vec3(rotatedUniVec[0], rotatedUniVec[1], rotatedUniVec[2]);
+	return add(tempTranslation, translationDiff);
+}
 
 
 //
@@ -87,6 +113,27 @@ function getFireflyModel(sizeFirefly) {
 	return;
 };
 
+//
+// moving functions
+//
+
+function fireflyRotation() {
+	rotationFirefly.forEach((tempRotation, idx) => rotationFirefly[idx] = randomRotate(tempRotation, 1));
+	return;
+};
+
+function fireflyTranslation() {
+	translationFirefly.forEach((tempTranslation, idx) => translationFirefly[idx] = randomTranslate(tempTranslation, rotationFirefly[idx], 0.002));
+	//collision and boundary detection
+	return
+}
+
+function fireflyTranspose() {
+	fireflyRotation();
+	fireflyTranslation();
+	setTimeout(fireflyTranspose, frameSpeedMS);
+}
+
 
 //
 // init functions
@@ -105,8 +152,14 @@ function buildFirefly() {
 	numFirefly = document.getElementById("numFirefly").value;
 	let tempNumFirefly = 0;
 	// translation
+	const fireflyTranslationHalfRange = 1 - sizeFirefly;
+	const fireflyTranslationRange = 2 * fireflyTranslationHalfRange;
 	while (tempNumFirefly < numFirefly) {
-		const tempTranslationFirefly = vec3(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1);
+		const tempTranslationFirefly = vec3(
+			Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange,
+			Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange,
+			Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange
+			);
 		//TODO: collision detection, out of boundary detection
 		translationFirefly.push(tempTranslationFirefly);
 		tempNumFirefly ++;
@@ -118,6 +171,8 @@ function buildFirefly() {
 		const tempRow = Math.random() * 180 - 90;
 		rotationFirefly.push(vec3(tempRow, tempPitch, tempYaw))
 	};
+
+	fireflyTranspose();
 	return
 }
 
@@ -167,14 +222,18 @@ function buildAllDrawAll() {
 // void => void
 window.onload = function init() {
 	const canvas = document.getElementById("gl-canvas");
+	canvas.width = window.innerWidth - 100;
+	canvas.height = window.innerHeight - 100;
+	const viewSize = Math.min(canvas.width, canvas.height);
+
 	gl = canvas.getContext('webgl2');
 	if (!gl) alert( "WebGL 2.0 isn't available" );
 
 	//
 	//  Configure WebGL
 	//
-	gl.viewport(0, 0, canvas.width, canvas.height);
-	gl.clearColor(1.0, 1.0, 1.0, 1.0);
+	gl.viewport(0, 0, viewSize, viewSize);
+	gl.clearColor(0.0, 0.0, 0.0, 1.0);
 
 	gl.enable(gl.DEPTH_TEST);
 
@@ -189,23 +248,28 @@ window.onload = function init() {
 // call webgl to draw a new frame
 // void => void
 function render() {
-	gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+	setTimeout(() => {
+		requestAnimationFrame(render);
 
-	// draw fireflies
-	for (let i = 0; i < numFirefly; i ++) {
-		//for each firefly, use firefly model
-		gl.useProgram(programFirefly);
-		gl.bindBuffer(gl.ARRAY_BUFFER, cBufferFirefly);
-		gl.vertexAttribPointer(colorLocFirefly, 3, gl.FLOAT, false, 0, 0);
-		gl.bindBuffer(gl.ARRAY_BUFFER, vBufferFirefly);
-		gl.vertexAttribPointer(positionLocFirefly, 3, gl.FLOAT, false, 0, 0);
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-		//compute transpose matrix as uniform variable
-		const transposeMat = getTransposeMat(rotationFirefly[i], translationFirefly[i])
-		gl.uniformMatrix4fv(transposeFireflyLoc, false, flatten(transposeMat));
-		gl.drawArrays(gl.TRIANGLES, 0, positionsFirefly.length);
-	};
+		// draw fireflies
+		for (let i = 0; i < numFirefly; i ++) {
+			//for each firefly, use firefly model
+			gl.useProgram(programFirefly);
+			gl.bindBuffer(gl.ARRAY_BUFFER, cBufferFirefly);
+			gl.vertexAttribPointer(colorLocFirefly, 3, gl.FLOAT, false, 0, 0);
+			gl.bindBuffer(gl.ARRAY_BUFFER, vBufferFirefly);
+			gl.vertexAttribPointer(positionLocFirefly, 3, gl.FLOAT, false, 0, 0);
 
-	// TODO: firefly moving
+			//compute transpose matrix as uniform variable
+			const transposeMat = getTransposeMat(rotationFirefly[i], translationFirefly[i])
+			gl.uniformMatrix4fv(transposeFireflyLoc, false, flatten(transposeMat));
+			gl.drawArrays(gl.TRIANGLES, 0, positionsFirefly.length);
+		};
+
+		// TODO: firefly moving
+		// something here
+	}, frameSpeedMS);
 };
 
