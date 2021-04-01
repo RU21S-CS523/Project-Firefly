@@ -241,7 +241,7 @@ window.onload = function init() {
 	canvas.width = window.innerWidth - 100;
 	canvas.height = window.innerHeight - 100;
 	const viewSize = Math.min(canvas.width, canvas.height);
-	const viewXPos = canvas.width - viewSize;
+	// const viewXPos = canvas.width - viewSize; // no need, because it should be left-aligned
 	const viewYPos = canvas.height - viewSize;
 
 	gl = canvas.getContext('webgl2');
@@ -250,7 +250,7 @@ window.onload = function init() {
 	//
 	//  Configure WebGL
 	//
-	gl.viewport(viewXPos, viewYPos, viewSize, viewSize);
+	gl.viewport(0, viewYPos, viewSize, viewSize);
 	gl.clearColor(0.0, 0.0, 0.0, 1.0);
 
 	gl.enable(gl.DEPTH_TEST);
