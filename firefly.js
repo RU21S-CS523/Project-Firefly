@@ -15,8 +15,9 @@ const translationFirefly = [];
 const rotationFirefly = [];
 
 // config related
-let numFirefly = 5;
-const frameSpeedMS = 33;
+let numFirefly = 10;
+const frameSpeedMS = 17;
+const sizeFirefly = 0.04;
 
 //
 // tool functions
@@ -34,7 +35,7 @@ function getRotationMat(tempRotation) {
 	const yMat = rotateY(tempRotation[1]);
 	const xMat = rotateX(tempRotation[0]);
 	return mult(xMat, mult(yMat, zMat));
-}
+};
 
 // compute homogeneous transpose matrix
 // (vec3(roll, pitch, yaw), vec3(x, y, z)) => mat4
@@ -44,14 +45,25 @@ function getTransposeMat(tempRotation, tempTranslation) {
 	return mult(tMat, rMat);
 };
 
+// compute the distance between two vector
+// (vec, vec) => float[0, inf)
+function getDistance(posA, posB) {
+	return length(subtract(posA, posB));
+};
+
 // add a random rotation to tempRotation
 // (vec3(roll, pitch, yaw), float(0, 45)) => vec3(roll, pitch, yaw)
 function randomRotate(tempRotation, rotationSpeed) {
 	let [tempRow, tempPitch, tempYaw] = tempRotation;
 	const rotationSpeed2 = rotationSpeed * 2;
-	tempRow = (tempRow + 450 + Math.random() * rotationSpeed2 - rotationSpeed) % 360 - 90;
-	tempPitch = (tempPitch + 450 + Math.random() * rotationSpeed2 - rotationSpeed) % 360 - 90;
-	tempYaw = (tempYaw + 360 + Math.random() * rotationSpeed2 - rotationSpeed) % 360;
+	const randomIdx = Math.random();
+	if (randomIdx < 0.5) {
+		tempYaw = (tempYaw + 360 + Math.random() * rotationSpeed2 - rotationSpeed) % 360;
+	} else if (randomIdx < 0.85) {
+		tempPitch = (tempPitch + 450 + Math.random() * rotationSpeed2 - rotationSpeed) % 360 - 90;
+	} else {
+		tempRow = (tempRow + 450 + Math.random() * rotationSpeed2 - rotationSpeed) % 360 - 90;
+	};
 	return vec3(tempRow, tempPitch, tempYaw);
 };
 
@@ -59,11 +71,11 @@ function randomRotate(tempRotation, rotationSpeed) {
 // (vec3(x, y, z), vec3(roll, pitch, yaw), float(0, 0.1)) => vec3(x, y, z)
 function randomTranslate(tempTranslation, tempRotation, translationSpeed) {
 	const rMat = getRotationMat(tempRotation);
-	const unitVec = vec4(0, 0, translationSpeed, 0); // becasue the model of firefly is heading to z+
+	const unitVec = vec4(translationSpeed, 0, 0, 0); // becasue the model of firefly is heading to x+
 	const rotatedUniVec = mult(rMat, unitVec);
 	const translationDiff = vec3(rotatedUniVec[0], rotatedUniVec[1], rotatedUniVec[2]);
 	return add(tempTranslation, translationDiff);
-}
+};
 
 
 //
@@ -76,17 +88,17 @@ function getFireflyModel(sizeFirefly) {
 	positionsFirefly.length = 0;
 	colorsFirefly.length = 0;
 
-	// body //heading to z+
+	// body //heading to x+
 	const bodyPosition = [[
 			vec3(0, 0, 0),
-			vec3(-sizeFirefly, -sizeFirefly * Math.sqrt(3) / 3, -sizeFirefly * Math.sqrt(3)),
-			vec3(sizeFirefly, -sizeFirefly * Math.sqrt(3) / 3, -sizeFirefly * Math.sqrt(3)),
-			vec3(0, sizeFirefly * 2 * Math.sqrt(3) / 3, -sizeFirefly * Math.sqrt(3))
+			vec3(-sizeFirefly * Math.sqrt(3), -sizeFirefly * Math.sqrt(3) / 3, -sizeFirefly),
+			vec3(-sizeFirefly * Math.sqrt(3), -sizeFirefly * Math.sqrt(3) / 3, sizeFirefly),
+			vec3(-sizeFirefly * Math.sqrt(3), sizeFirefly * 2 * Math.sqrt(3) / 3, 0)
 			],[
 			vec3(0, 0, 0),
-			vec3(sizeFirefly, sizeFirefly * Math.sqrt(3) / 3, sizeFirefly * Math.sqrt(3)),
-			vec3(-sizeFirefly, sizeFirefly * Math.sqrt(3) / 3, sizeFirefly * Math.sqrt(3)),
-			vec3(0, -sizeFirefly * 2 * Math.sqrt(3) / 3, sizeFirefly * Math.sqrt(3))
+			vec3(sizeFirefly * Math.sqrt(3), sizeFirefly * Math.sqrt(3) / 3, sizeFirefly),
+			vec3(sizeFirefly * Math.sqrt(3), sizeFirefly * Math.sqrt(3) / 3, -sizeFirefly),
+			vec3(sizeFirefly * Math.sqrt(3), -sizeFirefly * 2 * Math.sqrt(3) / 3, 0)
 			]
 		];
 
@@ -120,34 +132,80 @@ function getFireflyModel(sizeFirefly) {
 	return;
 };
 
+
 //
 // moving functions
 //
 
+// check if tempTranslation is out of boundary
+// (vec3(x, y, z), float[0, 0.3)) => Boolean{true: out, false: in}
+function checkBoundary(tempTranslation, margin) {
+	for (var idx = tempTranslation.length - 1; idx >= 0; idx --) {
+		if (tempTranslation[idx] > 1 - margin) {
+			return true;
+		} else if (tempTranslation[idx] < -1 + margin) {
+			return true;
+		};
+	};
+	return false;
+};
+
+// check if tempTranslation collides with others in translationList, where index(tempTranslation) is tempIdx
+// (vec3(x, y, z), Array[vec3], int[0, lenght - 1), float[0, 0.3)) => Boolean{true: collision, flase: safe}
+function checkCollision(tempTranslation, translationList, tempIdx, margin) {
+	for (var idx = translationFirefly.length - 1; idx >= 0; idx --) {
+		if (idx === tempIdx) {
+			continue;
+		};
+		if (getDistance(tempTranslation, translationFirefly[idx]) < margin) {
+			return true;
+		};
+	};
+	return false;
+};
+
 // update rotationFirefly
 // void => void
 function updateFireflyRotation() {
-	rotationFirefly.forEach((tempRotation, idx) => rotationFirefly[idx] = randomRotate(tempRotation, 1));
+	const rotationSpeed = 0.5;
+	rotationFirefly.forEach((tempRotation, idx) => rotationFirefly[idx] = randomRotate(tempRotation, rotationSpeed));
 	return;
 };
 
 // update translationFirefly
 // void => void
 function updateFireflyTranslation() {
+	const translationSpeed = 0.0005;
+	const boundaryMargin = sizeFirefly * 2;
+	const collisionMargin = sizeFirefly * 4;
+	const turningRotationSpeed = 20;
 	translationFirefly.forEach((tempTranslation, idx) => {
-		const nextTranslation = randomTranslate(tempTranslation, rotationFirefly[idx], 0.002);
-		//collision and boundary detection
-		translationFirefly[idx] = nextTranslation;
+		const nextTranslation = randomTranslate(tempTranslation, rotationFirefly[idx], translationSpeed);
+		if (checkBoundary(nextTranslation, boundaryMargin)) {
+			// out of boundary, turn back
+			rotationFirefly[idx] = vec3(rotationFirefly[idx][0], rotationFirefly[idx][1], 180 + rotationFirefly[idx][2]);
+		} else if (checkCollision(nextTranslation, translationFirefly, idx, collisionMargin)) {
+			// collision, turn aside
+			rotationFirefly[idx] = vec3(rotationFirefly[idx][0], 5 + rotationFirefly[idx][1], 30 + rotationFirefly[idx][2]);
+		} else {
+			// safe, go
+			translationFirefly[idx] = nextTranslation;
+		};
+		return;
 	});
 	return;
 };
 
-// update transpose iteratively
-// void => void
-function updateFireflyTranspose() {
-	updateFireflyRotation();
+// update transpose iteratively, count is used for slowing down rotation
+// int[0, inf) => void
+function updateFireflyTranspose(count) {
+	const rotationSlowDownRatio = 2;
+	if (count === 0) {
+		updateFireflyRotation();
+	};
 	updateFireflyTranslation();
-	setTimeout(updateFireflyTranspose, frameSpeedMS); //update here to avoid frame rate influence
+	setTimeout(() => updateFireflyTranspose((count + 1) % rotationSlowDownRatio), frameSpeedMS); //update here to avoid frame rate influence
+	return;
 };
 
 
@@ -159,7 +217,6 @@ function updateFireflyTranspose() {
 // void => void
 function buildFirefly() {
 	// firefly model
-	const sizeFirefly = 0.04;
 	getFireflyModel(sizeFirefly);
 
 	// firefly transpose
@@ -168,15 +225,18 @@ function buildFirefly() {
 	numFirefly = document.getElementById("numFirefly").value;
 	let tempNumFirefly = 0;
 	// translation
-	const fireflyTranslationHalfRange = 1 - sizeFirefly;
+	const fireflyTranslationHalfRange = 1 - 4 * sizeFirefly;
 	const fireflyTranslationRange = 2 * fireflyTranslationHalfRange;
+	const collisionMargin = sizeFirefly * 4;
 	while (tempNumFirefly < numFirefly) {
-		const tempTranslationFirefly = vec3(
-			Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange,
-			Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange,
-			Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange
-			);
-		//TODO: collision detection, out of boundary detection
+		let tempTranslationFirefly;
+		do {
+			tempTranslationFirefly = vec3(
+				Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange,
+				Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange,
+				Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange
+				);
+		} while (checkCollision(tempTranslationFirefly, tempNumFirefly, collisionMargin));
 		translationFirefly.push(tempTranslationFirefly);
 		tempNumFirefly ++;
 	};
@@ -185,10 +245,13 @@ function buildFirefly() {
 		const tempYaw = Math.random() * 360;
 		const tempPitch = Math.random() * 180 - 90;
 		const tempRow = Math.random() * 180 - 90;
+		// const tempYaw = 0
+		// const tempPitch = 0
+		// const tempRow = 0
 		rotationFirefly.push(vec3(tempRow, tempPitch, tempYaw))
 	};
 
-	updateFireflyTranspose();
+	updateFireflyTranspose(0);
 	return
 }
 
@@ -258,6 +321,7 @@ window.onload = function init() {
 	buildAllDrawAll();
 	return;
 };
+
 
 //
 // rendering function
