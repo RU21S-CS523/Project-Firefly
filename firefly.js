@@ -9,15 +9,30 @@ let colorLocFirefly;
 let positionLocFirefly;
 let transposeFireflyLoc;
 
-const positionsFirefly = [];
-const colorsFirefly = [];
-const translationFirefly = [];
-const rotationFirefly = [];
+let programGlow;
+let cBufferGlow;
+let vBufferGlow;
+let colorLocGlow;
+let positionLocGlow;
+let transposeGlowLoc;
+let alphaGlowLoc;
+let scaleGlowLoc;
+
+let positionsFirefly = [];
+let colorsFirefly = [];
+let translationFirefly = [];
+let rotationFirefly = [];
+
+let positionsGlow = [];
+let colorsGlow = [];
+let translationGlow = [];
+let rotationGlow = [];
+let clockGlow = [];
 
 // config related
 let numFirefly = 10;
 const frameSpeedMS = 17;
-const sizeFirefly = 0.04;
+const sizeFirefly = 0.02;
 
 //
 // tool functions
@@ -67,6 +82,7 @@ function randomRotate(tempRotation, rotationSpeed) {
 	return vec3(tempRow, tempPitch, tempYaw);
 };
 
+
 // add a random translation to tempTranslation, given tempRotation
 // (vec3(x, y, z), vec3(roll, pitch, yaw), float(0, 0.1)) => vec3(x, y, z)
 function randomTranslate(tempTranslation, tempRotation, translationSpeed) {
@@ -75,6 +91,56 @@ function randomTranslate(tempTranslation, tempRotation, translationSpeed) {
 	const rotatedUniVec = mult(rMat, unitVec);
 	const translationDiff = vec3(rotatedUniVec[0], rotatedUniVec[1], rotatedUniVec[2]);
 	return add(tempTranslation, translationDiff);
+};
+
+
+function getSphere(r, lSize, bSize) {
+	let positionSphere = [];
+
+	const longitudeAngleList = Array.from({length: lSize}, (x, i) => 2 * Math.PI * (i / lSize));
+	const latitudeAngleList = Array.from({length: bSize}, (x, i) => Math.PI / 2 * ((0.5 + i) / (bSize / 2) - 1));
+	let prevCircle = new Array(lSize + 1).fill(vec3(0, 0, r));
+	let tempCircle = new Array(lSize + 1);
+	for (let lIdx = latitudeAngleList.length - 1; lIdx >= 0; lIdx --) {
+		const l = latitudeAngleList[lIdx];
+		const z = r * Math.sin(l);
+		const p = r * Math.cos(l); // projection of r on xy plane
+		for (let bIdx = longitudeAngleList.length - 1; bIdx >= 0; bIdx --) {
+			const b = longitudeAngleList[bIdx];
+			const x = p * Math.cos(b);
+			const y = p * Math.sin(b);
+			tempCircle[bIdx] = vec3(x, y, z);
+		};
+		tempCircle[lSize] = tempCircle[0];
+
+		for (let bIdx = longitudeAngleList.length - 1; bIdx >= 0; bIdx --) {
+			const aPos = tempCircle[bIdx];
+			const bPos = tempCircle[bIdx + 1];
+			const cPos = prevCircle[bIdx + 1];
+			const dPos = prevCircle[bIdx];
+
+			positionSphere.push(
+				aPos, bPos, cPos,
+				cPos, dPos, aPos
+				);
+		};
+		prevCircle = tempCircle;
+		tempCircle = new Array(lSize + 1);
+	};
+
+	tempCircle.fill(vec3(0, 0, -r));
+	for (let bIdx = longitudeAngleList.length - 1; bIdx >= 0; bIdx --) {
+		const aPos = tempCircle[bIdx];
+		const bPos = tempCircle[bIdx + 1];
+		const cPos = prevCircle[bIdx + 1];
+		const dPos = prevCircle[bIdx];
+
+		positionSphere.push(
+			aPos, bPos, cPos,
+			cPos, dPos, aPos
+			);
+	};
+	return positionSphere;
 };
 
 
@@ -132,6 +198,16 @@ function getFireflyModel(sizeFirefly) {
 	return;
 };
 
+function getGlowModel(sizeGlow) {
+	const lSizeGlow = 15;
+	const bSizeGlow = 14;
+	const glowColor = vec3(0.9, 0.9, 0);
+
+	positionsGlow = getSphere(sizeGlow, lSizeGlow, bSizeGlow);
+	colorsGlow = Array(positionsGlow.length).fill(glowColor);
+	return;
+}
+
 
 //
 // moving functions
@@ -140,7 +216,7 @@ function getFireflyModel(sizeFirefly) {
 // check if tempTranslation is out of boundary
 // (vec3(x, y, z), float[0, 0.3)) => Boolean{true: out, false: in}
 function checkBoundary(tempTranslation, margin) {
-	for (var idx = tempTranslation.length - 1; idx >= 0; idx --) {
+	for (let idx = tempTranslation.length - 1; idx >= 0; idx --) {
 		if (tempTranslation[idx] > 1 - margin) {
 			return true;
 		} else if (tempTranslation[idx] < -1 + margin) {
@@ -153,7 +229,7 @@ function checkBoundary(tempTranslation, margin) {
 // check if tempTranslation collides with others in translationList, where index(tempTranslation) is tempIdx
 // (vec3(x, y, z), Array[vec3], int[0, lenght - 1), float[0, 0.3)) => Boolean{true: collision, flase: safe}
 function checkCollision(tempTranslation, translationList, tempIdx, margin) {
-	for (var idx = translationFirefly.length - 1; idx >= 0; idx --) {
+	for (let idx = translationFirefly.length - 1; idx >= 0; idx --) {
 		if (idx === tempIdx) {
 			continue;
 		};
@@ -176,7 +252,7 @@ function updateFireflyRotation() {
 // void => void
 function updateFireflyTranslation() {
 	const translationSpeed = 0.0005;
-	const boundaryMargin = sizeFirefly * 2;
+	const boundaryMargin = sizeFirefly * 8;
 	const collisionMargin = sizeFirefly * 4;
 	const turningRotationSpeed = 20;
 	translationFirefly.forEach((tempTranslation, idx) => {
@@ -199,14 +275,28 @@ function updateFireflyTranslation() {
 // update transpose iteratively, count is used for slowing down rotation
 // int[0, inf) => void
 function updateFireflyTranspose(count) {
-	const rotationSlowDownRatio = 2;
 	if (count === 0) {
 		updateFireflyRotation();
 	};
 	updateFireflyTranslation();
-	setTimeout(() => updateFireflyTranspose((count + 1) % rotationSlowDownRatio), frameSpeedMS); //update here to avoid frame rate influence
 	return;
 };
+
+function updateGlowClock() {
+	const clockSpeed = 0.02
+	clockGlow.forEach((clock, idx) => {
+		clockGlow[idx] = (clock + clockSpeed) % Math.PI;
+	});
+	return;
+};
+
+function updateAll(count) {
+	const fireflyRotationSlowDownRatio = 2;
+	updateFireflyTranspose(count);
+	updateGlowClock()
+	setTimeout(() => updateAll((count + 1) % fireflyRotationSlowDownRatio), frameSpeedMS); //update here to avoid frame rate influence
+	return;
+}
 
 
 //
@@ -225,9 +315,9 @@ function buildFirefly() {
 	numFirefly = document.getElementById("numFirefly").value;
 	let tempNumFirefly = 0;
 	// translation
-	const fireflyTranslationHalfRange = 1 - 4 * sizeFirefly;
+	const fireflyTranslationHalfRange = 1 - 10 * sizeFirefly;
 	const fireflyTranslationRange = 2 * fireflyTranslationHalfRange;
-	const collisionMargin = sizeFirefly * 4;
+	const collisionMargin = sizeFirefly * 6;
 	while (tempNumFirefly < numFirefly) {
 		let tempTranslationFirefly;
 		do {
@@ -236,7 +326,7 @@ function buildFirefly() {
 				Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange,
 				Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange
 				);
-		} while (checkCollision(tempTranslationFirefly, tempNumFirefly, collisionMargin));
+		} while (checkCollision(tempTranslationFirefly, translationFirefly, tempNumFirefly, collisionMargin));
 		translationFirefly.push(tempTranslationFirefly);
 		tempNumFirefly ++;
 	};
@@ -245,14 +335,21 @@ function buildFirefly() {
 		const tempYaw = Math.random() * 360;
 		const tempPitch = Math.random() * 180 - 90;
 		const tempRow = Math.random() * 180 - 90;
-		// const tempYaw = 0
-		// const tempPitch = 0
-		// const tempRow = 0
 		rotationFirefly.push(vec3(tempRow, tempPitch, tempYaw))
 	};
 
-	updateFireflyTranspose(0);
-	return
+	return;
+};
+
+function buildGlow() {
+	getGlowModel(4 * sizeFirefly);
+	translationGlow = translationFirefly;
+	rotationGlow = rotationFirefly;
+
+	for (let i = translationGlow.length; i >= 0; i --) {
+		clockGlow.push(Math.random() * Math.PI);
+	};
+	return;
 }
 
 // init shaders, bind buffers and send models
@@ -261,6 +358,7 @@ function initDrawing() {
 	//  Load shaders and initialize attribute buffers
 
 	programFirefly = initShaders(gl, "firefly-vertex-shader", "firefly-fragment-shader");
+	programGlow = initShaders(gl, "glow-vertex-shader", "glow-fragment-shader");
 
 	// Load the data into the GPU
 
@@ -283,6 +381,27 @@ function initDrawing() {
 
 	transposeFireflyLoc = gl.getUniformLocation(programFirefly, "transposeFirefly");
 
+
+	gl.useProgram(programGlow);
+
+	cBufferGlow = gl.createBuffer();
+	gl.bindBuffer(gl.ARRAY_BUFFER, cBufferGlow);
+	gl.bufferData(gl.ARRAY_BUFFER, flatten(colorsGlow), gl.STATIC_DRAW);
+
+	colorLocGlow = gl.getAttribLocation(programGlow, "aColorGlow");
+	gl.enableVertexAttribArray(colorLocGlow);
+
+	vBufferGlow = gl.createBuffer();
+	gl.bindBuffer(gl.ARRAY_BUFFER, vBufferGlow);
+	gl.bufferData(gl.ARRAY_BUFFER, flatten(positionsGlow), gl.STATIC_DRAW);
+
+	positionLocGlow = gl.getAttribLocation(programGlow, "aPositionGlow");
+	gl.enableVertexAttribArray(positionLocGlow);
+
+	transposeGlowLoc = gl.getUniformLocation(programGlow, "transposeGlow");
+	alphaGlowLoc = gl.getUniformLocation(programGlow, "alphaGlow");
+	scaleGlowLoc = gl.getUniformLocation(programGlow, "scaleGlow");
+
 	render();
 	return;
 };
@@ -291,8 +410,10 @@ function initDrawing() {
 // void => void
 function buildAllDrawAll() {
 	buildFirefly();
-	//TODO: glowing
+	buildGlow();
 	initDrawing();
+
+	updateAll(0);
 	return;
 };
 
@@ -317,6 +438,8 @@ window.onload = function init() {
 	gl.clearColor(0.0, 0.0, 0.0, 1.0);
 
 	gl.enable(gl.DEPTH_TEST);
+	gl.enable(gl.BLEND);
+	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
 	buildAllDrawAll();
 	return;
@@ -338,6 +461,7 @@ function render() {
 		// draw fireflies
 		for (let i = 0; i < numFirefly; i ++) {
 			//for each firefly, use firefly model
+			gl.depthMask(true);
 			gl.useProgram(programFirefly);
 			gl.bindBuffer(gl.ARRAY_BUFFER, cBufferFirefly);
 			gl.vertexAttribPointer(colorLocFirefly, 3, gl.FLOAT, false, 0, 0);
@@ -347,7 +471,28 @@ function render() {
 			//compute transpose matrix as uniform variable
 			const transposeMat = getTransposeMat(rotationFirefly[i], translationFirefly[i])
 			gl.uniformMatrix4fv(transposeFireflyLoc, false, flatten(transposeMat));
+
 			gl.drawArrays(gl.TRIANGLES, 0, positionsFirefly.length);
+
+
+			gl.depthMask(false);
+			gl.useProgram(programGlow);
+			gl.bindBuffer(gl.ARRAY_BUFFER, cBufferGlow);
+			gl.vertexAttribPointer(colorLocGlow, 3, gl.FLOAT, false, 0, 0);
+			gl.bindBuffer(gl.ARRAY_BUFFER, vBufferGlow);
+			gl.vertexAttribPointer(positionLocGlow, 3, gl.FLOAT, false, 0, 0);
+
+			//compute transpose matrix as uniform variable
+			// const transposeMat = getTransposeMat(rotationGlow[i], translationGlow[i]) // same transportation
+			gl.uniformMatrix4fv(transposeGlowLoc, false, flatten(transposeMat));
+			const glowFactor = Math.pow(Math.cos(clockGlow[i]), 16);
+			gl.uniform1f(alphaGlowLoc, 0.5 * glowFactor);
+			const scaleGlowMat = scale(glowFactor, glowFactor, glowFactor);
+			gl.uniformMatrix4fv(scaleGlowLoc, false, flatten(scaleGlowMat));
+
+			gl.drawArrays(gl.TRIANGLES, 0, positionsGlow.length);
+
+			gl.depthMask(true);
 		};
 	}, frameSpeedMS);
 };

@@ -40,6 +40,38 @@
 	}
 	</script>
 
+	<script id="glow-vertex-shader" type="x-shader/x-vertex">
+	#version 300 es
+
+	in vec3 aPositionGlow;
+	in vec3 aColorGlow;
+	uniform mat4 transposeGlow;
+	uniform float alphaGlow;
+	uniform mat4 scaleGlow;
+	out vec4 vColorGlow;
+
+	void
+	main()
+	{
+		gl_Position = transposeGlow * scaleGlow * vec4(aPositionGlow, 1);
+		vColorGlow = vec4(aColorGlow, alphaGlow);
+	}
+	</script>
+
+	<script id="glow-fragment-shader" type="x-shader/x-fragment">
+	#version 300 es
+	precision mediump float;
+
+	in vec4 vColorGlow;
+	out vec4 fColorGlow;
+
+	void
+	main()
+	{
+	    fColorGlow = vColorGlow;
+	}
+	</script>
+
 
 	<script src="./Common/initShaders.js"></script>
 	<script src="./Common/MVnew.js"></script>
