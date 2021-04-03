@@ -322,13 +322,16 @@ function updateGlowClock() {
 	const nudgeSpeed = 0.001;
 	const glowHalfRange = 0.05;
 	const glowStart = Math.PI - glowHalfRange;
+
 	clockGlow.forEach((clock, idx) => {
+		// auto ++
 		clockGlow[idx] = (clock + clockSpeed) % Math.PI;
-		// console.log(translationGlow[idx])
 		if (clockGlow[idx] < glowStart && clockGlow[idx] > glowHalfRange) {
+			// nudge
 			let count = checkConditioningNeighbor(translationGlow[idx], translationGlow, idx, nudgeRange, clockGlow, checkGlow);
 			if (count) {
 				clockGlow[idx] += (count * nudgeSpeed) % Math.PI;
+				// nudge at most to the next cycle start
 				clockGlow[idx] = Math.min(clockGlow[idx], glowHalfRange);
 			};
 		};
