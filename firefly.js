@@ -31,8 +31,10 @@ let clockGlow = [];
 
 // config related
 let numFirefly = 10;
+let nudgeRange = 8;
 const frameSpeedMS = 17;
 const sizeFirefly = 0.02;
+
 
 //
 // tool functions
@@ -93,7 +95,8 @@ function randomTranslate(tempTranslation, tempRotation, translationSpeed) {
 	return add(tempTranslation, translationDiff);
 };
 
-
+// construct a sphere with radius r, where latitude splits into lSize, and longitude splits into bSize + 2
+// (float(0, inf), int[3, inf), int[1, inf)) => Array(vec3(x, y, z))
 function getSphere(r, lSize, bSize) {
 	let positionSphere = [];
 
@@ -198,8 +201,10 @@ function getFireflyModel(sizeFirefly) {
 	return;
 };
 
+// construct glow model
+// float(0, 0.5] => void
 function getGlowModel(sizeGlow) {
-	const lSizeGlow = 15;
+	const lSizeGlow = 16;
 	const bSizeGlow = 14;
 	const glowColor = vec3(0.9, 0.9, 0);
 
@@ -240,6 +245,33 @@ function checkCollision(tempTranslation, translationList, tempIdx, margin) {
 	return false;
 };
 
+//check if tempClock is glowing
+// float[0, Math.PI) => Boolean{ture: glowing, false: dark}
+function checkGlow(tempClock) {
+	const glowHalfRange = 0.05;
+	if ((tempClock + glowHalfRange) % Math.PI < glowHalfRange * 2) {
+		return true;
+	};
+	return false;
+}
+
+//check how many translationList neighbors in margin distance satisfy conditionFunction, given condistionList
+// (vec3(x, y, z), Array[vec3], int[0, lenght - 1), float[0, 0.3), Array(object), function(object)) => int[0, length - 2]
+function checkConditioningNeighbor(tempTranslation, translationList, tempIdx, margin, conditionList, conditionFunction) {
+	let count = 0;
+	for (let idx = translationFirefly.length - 1; idx >= 0; idx --) {
+		if (idx === tempIdx) {
+			continue;
+		};
+		if (conditionFunction(conditionList[idx])) {
+			if (getDistance(tempTranslation, translationFirefly[idx]) < margin) {
+				count ++;
+			};
+		};
+	};
+	return count;
+};
+
 // update rotationFirefly
 // void => void
 function updateFireflyRotation() {
@@ -251,7 +283,7 @@ function updateFireflyRotation() {
 // update translationFirefly
 // void => void
 function updateFireflyTranslation() {
-	const translationSpeed = 0.0005;
+	const translationSpeed = 0.001;
 	const boundaryMargin = sizeFirefly * 8;
 	const collisionMargin = sizeFirefly * 4;
 	const turningRotationSpeed = 20;
@@ -282,18 +314,34 @@ function updateFireflyTranspose(count) {
 	return;
 };
 
+// update glow clock
+// void => void
 function updateGlowClock() {
-	const clockSpeed = 0.02
+	const clockSpeed = 0.02;
+	const nudgeRange = sizeFirefly * 8;
+	const nudgeSpeed = 0.001;
+	const glowHalfRange = 0.05;
+	const glowStart = Math.PI - glowHalfRange;
 	clockGlow.forEach((clock, idx) => {
 		clockGlow[idx] = (clock + clockSpeed) % Math.PI;
+		// console.log(translationGlow[idx])
+		if (clockGlow[idx] < glowStart && clockGlow[idx] > glowHalfRange) {
+			let count = checkConditioningNeighbor(translationGlow[idx], translationGlow, idx, nudgeRange, clockGlow, checkGlow);
+			if (count) {
+				clockGlow[idx] += (count * nudgeSpeed) % Math.PI;
+				clockGlow[idx] = Math.min(clockGlow[idx], glowHalfRange);
+			};
+		};
 	});
 	return;
 };
 
+// update all things, count is used for slowing down rotation
+// int[0, inf) => void
 function updateAll(count) {
 	const fireflyRotationSlowDownRatio = 2;
 	updateFireflyTranspose(count);
-	updateGlowClock()
+	updateGlowClock();
 	setTimeout(() => updateAll((count + 1) % fireflyRotationSlowDownRatio), frameSpeedMS); //update here to avoid frame rate influence
 	return;
 }
@@ -312,7 +360,9 @@ function buildFirefly() {
 	// firefly transpose
 	translationFirefly.length = 0;
 	rotationFirefly.length = 0;
-	numFirefly = document.getElementById("numFirefly").value;
+	numFirefly = Math.max(4, Math.min(document.getElementById("numFirefly").value, 512));
+	document.getElementById("numFirefly").value = numFirefly;
+
 	let tempNumFirefly = 0;
 	// translation
 	const fireflyTranslationHalfRange = 1 - 10 * sizeFirefly;
@@ -335,18 +385,25 @@ function buildFirefly() {
 		const tempYaw = Math.random() * 360;
 		const tempPitch = Math.random() * 180 - 90;
 		const tempRow = Math.random() * 180 - 90;
-		rotationFirefly.push(vec3(tempRow, tempPitch, tempYaw))
+		rotationFirefly.push(vec3(tempRow, tempPitch, tempYaw));
 	};
 
 	return;
 };
 
+// construct glows
+// void => void
 function buildGlow() {
+	nudgeRange = Math.max(4, Math.min(document.getElementById("nudgeRange").value, 16));
+	document.getElementById("nudgeRange").value = nudgeRange;
+
 	getGlowModel(4 * sizeFirefly);
+
+	clockGlow.length = 0;
 	translationGlow = translationFirefly;
 	rotationGlow = rotationFirefly;
 
-	for (let i = translationGlow.length; i >= 0; i --) {
+	for (let i = numFirefly - 1; i >= 0; i --) {
 		clockGlow.push(Math.random() * Math.PI);
 	};
 	return;
@@ -382,6 +439,7 @@ function initDrawing() {
 	transposeFireflyLoc = gl.getUniformLocation(programFirefly, "transposeFirefly");
 
 
+	// glow
 	gl.useProgram(programGlow);
 
 	cBufferGlow = gl.createBuffer();
@@ -460,7 +518,11 @@ function render() {
 
 		// draw fireflies
 		for (let i = 0; i < numFirefly; i ++) {
-			//for each firefly, use firefly model
+			//
+			// non-transparent part
+			//
+
+			// for each firefly, use firefly model
 			gl.depthMask(true);
 			gl.useProgram(programFirefly);
 			gl.bindBuffer(gl.ARRAY_BUFFER, cBufferFirefly);
@@ -468,13 +530,17 @@ function render() {
 			gl.bindBuffer(gl.ARRAY_BUFFER, vBufferFirefly);
 			gl.vertexAttribPointer(positionLocFirefly, 3, gl.FLOAT, false, 0, 0);
 
-			//compute transpose matrix as uniform variable
+			// compute transpose matrix as uniform variable
 			const transposeMat = getTransposeMat(rotationFirefly[i], translationFirefly[i])
 			gl.uniformMatrix4fv(transposeFireflyLoc, false, flatten(transposeMat));
 
 			gl.drawArrays(gl.TRIANGLES, 0, positionsFirefly.length);
 
+			//
+			//transparent part
+			//
 
+			// for each glow, use glow model
 			gl.depthMask(false);
 			gl.useProgram(programGlow);
 			gl.bindBuffer(gl.ARRAY_BUFFER, cBufferGlow);
@@ -482,11 +548,12 @@ function render() {
 			gl.bindBuffer(gl.ARRAY_BUFFER, vBufferGlow);
 			gl.vertexAttribPointer(positionLocGlow, 3, gl.FLOAT, false, 0, 0);
 
-			//compute transpose matrix as uniform variable
-			// const transposeMat = getTransposeMat(rotationGlow[i], translationGlow[i]) // same transportation
+			// compute transpose matrix as uniform variable
+			// // const transposeMat = getTransposeMat(rotationGlow[i], translationGlow[i]) // same transportation
 			gl.uniformMatrix4fv(transposeGlowLoc, false, flatten(transposeMat));
-			const glowFactor = Math.pow(Math.cos(clockGlow[i]), 16);
-			gl.uniform1f(alphaGlowLoc, 0.5 * glowFactor);
+			// compute glow factor using cos^16(x)
+			const glowFactor = Math.pow(Math.cos(clockGlow[i]), 32);
+			gl.uniform1f(alphaGlowLoc, glowFactor / 4);
 			const scaleGlowMat = scale(glowFactor, glowFactor, glowFactor);
 			gl.uniformMatrix4fv(scaleGlowLoc, false, flatten(scaleGlowMat));
 
