@@ -402,7 +402,7 @@ function buildFirefly() {
 // construct glows
 // void => void
 function buildGlow() {
-	nudgeRange = Math.max(4, Math.min(document.getElementById("nudgeRange").value, 16));
+	nudgeRange = Math.max(4, Math.min(document.getElementById("nudgeRange").value, 64));
 	document.getElementById("nudgeRange").value = nudgeRange;
 
 	getGlowModel(4 * sizeFirefly);
