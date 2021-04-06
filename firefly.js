@@ -35,6 +35,8 @@ let nudgeRange = 8;
 const frameSpeedMS = 17;
 const sizeFirefly = 0.02;
 
+let resetFlag = false
+
 
 //
 // tool functions
@@ -246,7 +248,7 @@ function checkCollision(tempTranslation, translationList, tempIdx, margin) {
 };
 
 //check if tempClock is glowing
-// float[0, Math.PI) => Boolean{ture: glowing, false: dark}
+// float[0, Math.PI) => Boolean{true: glowing, false: dark}
 function checkGlow(tempClock) {
 	const glowHalfRange = 0.05;
 	if ((tempClock + glowHalfRange) % Math.PI < glowHalfRange * 2) {
@@ -342,6 +344,9 @@ function updateGlowClock() {
 // update all things, count is used for slowing down rotation
 // int[0, inf) => void
 function updateAll(count) {
+	if (resetFlag) {
+		return;
+	}
 	const fireflyRotationSlowDownRatio = 2;
 	updateFireflyTranspose(count);
 	updateGlowClock();
@@ -470,11 +475,17 @@ function initDrawing() {
 // reset drawing. response to button "Reset!"
 // void => void
 function buildAllDrawAll() {
+	resetFlag = true;
 	buildFirefly();
 	buildGlow();
-	initDrawing();
 
-	updateAll(0);
+	setTimeout(() => {
+		resetFlag = false;
+		initDrawing();
+		updateAll(0);
+		return;
+	}, 5 * frameSpeedMS);
+
 	return;
 };
 
@@ -514,6 +525,10 @@ window.onload = function init() {
 // call webgl to draw a new frame
 // void => void
 function render() {
+	if (resetFlag) {
+		return;
+	};
+
 	setTimeout(() => {
 		requestAnimationFrame(render);
 
@@ -565,5 +580,6 @@ function render() {
 			gl.depthMask(true);
 		};
 	}, frameSpeedMS);
+	return;
 };
 
