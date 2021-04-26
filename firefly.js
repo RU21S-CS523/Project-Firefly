@@ -162,12 +162,12 @@ function getFireflyModel(sizeFirefly) {
 	// body //heading to x+
 	const bodyPosition = [[
 			vec3(0, 0, 0),
-			vec3(-sizeFirefly * Math.sqrt(3), -sizeFirefly * Math.sqrt(3) / 3, -sizeFirefly),
+			vec3(-sizeFirefly * Math.sqrt(8), -sizeFirefly * Math.sqrt(3) / 3, -sizeFirefly),
 			vec3(-sizeFirefly * Math.sqrt(3), -sizeFirefly * Math.sqrt(3) / 3, sizeFirefly),
 			vec3(-sizeFirefly * Math.sqrt(3), sizeFirefly * 2 * Math.sqrt(3) / 3, 0)
 			],[
 			vec3(0, 0, 0),
-			vec3(sizeFirefly * Math.sqrt(3), sizeFirefly * Math.sqrt(3) / 3, sizeFirefly),
+			vec3(sizeFirefly * Math.sqrt(8), sizeFirefly * Math.sqrt(3) / 3, sizeFirefly),
 			vec3(sizeFirefly * Math.sqrt(3), sizeFirefly * Math.sqrt(3) / 3, -sizeFirefly),
 			vec3(sizeFirefly * Math.sqrt(3), -sizeFirefly * 2 * Math.sqrt(3) / 3, 0)
 			]
