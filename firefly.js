@@ -96,7 +96,7 @@ function randomTranslate(tempTranslation, tempRotation, translationSpeed) {
 	const translationDiff = vec3(rotatedUniVec[0], rotatedUniVec[1], rotatedUniVec[2]);
 	return add(tempTranslation, translationDiff);
 };
-
+//
 // construct a sphere with radius r, where latitude splits into lSize, and longitude splits into bSize + 2
 // (float(0, inf), int[3, inf), int[1, inf)) => Array(vec3(x, y, z))
 function getSphere(r, lSize, bSize) {
