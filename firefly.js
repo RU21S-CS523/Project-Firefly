@@ -8,43 +8,92 @@ let vBufferFirefly;
 let colorLocFirefly;
 let positionLocFirefly;
 let transposeFireflyLoc;
+let projectionFireflyLoc;
 
 let programGlow;
-let cBufferGlow;
+// let cBufferGlow; // no longer use, switch to uniform variable colorGlow
 let vBufferGlow;
-let colorLocGlow;
+// let colorLocGlow; // no longer use, switch to uniform variable colorGlow
 let positionLocGlow;
 let transposeGlowLoc;
+let colorGlowLoc;
 let alphaGlowLoc;
 let scaleGlowLoc;
+let projectionGlowLoc;
 
-let positionsFirefly = [];
-let colorsFirefly = [];
-let translationFirefly = [];
-let rotationFirefly = [];
+let positionsFirefly = []; // firefly model positions
+let colorsFirefly = []; // firefly model colors
+let translationFirefly = []; // firefly positions of world frame
+let rotationFirefly = []; // firefly rotation of self frame
+let clockFirefly = []; // firefly glowing clock, [0, 1]
 
-let positionsGlow = [];
-let colorsGlow = [];
-let translationGlow = [];
-let rotationGlow = [];
-let clockGlow = [];
+let positionsGlow = []; // glow model positions
+// let colorsGlow = []; // glow model colors // no longer use, switch to uniform variable colorGlow
+let translationGlow = []; // glow positions of world frame, the same as firefly ones
+let rotationGlow = []; // glow rotation of self frame, the same as firefly ones
+let clockGlow = []; // glow glowing clock, [0, 1]
+let flagGlow = []; // glow flag, ture: glowing, false: not glowing
+
 
 // config related
-let numFirefly = 10;
-let nudgeRange = 8;
 const frameSpeedMS = 17;
 const sizeFirefly = 0.02;
+const colorGlowSaturation = 1;
+const colorGlowLightness = 0.6;
 
-let resetFlag = false
+let numFirefly = 256;
+
+let colorGlowHue = 60;
+let colorGlow = hslToRgb(colorGlowHue / 360, colorGlowSaturation, colorGlowLightness);
+
+let glowSizeFactor = 100;
+let glowSize = glowSizeFactor / 100;
+
+let glowFrequencyFactor = 8;
+let clockFireflySpeed = glowFrequencyFactor / 1000;
+
+let nudgeRangeFactor = 16;
+let nudgeSpeedFactor = 8;
+
+let projectionMat = mat4();
+let cameraRotation = vec3(0, 0, 0);
+let perspectiveFlag = false;
+let cameraMat = mat4();
+let fov = 90;
+
+
+let resetFlag = false;
 
 
 //
 // tool functions
 //
 
-// function sleep(ms) {
-//   return new Promise(resolve => setTimeout(resolve, ms));
-// }
+// translate color space: HSL => RGB
+// (float[0, 1], float[0, 1], float[0, 1]) => (float[0, 1], float[0, 1], float[0, 1])
+function hslToRgb(h, s, l){
+    let r, g, b;
+
+    if(s == 0){
+        r = g = b = l; // achromatic
+    } else {
+        let hue2rgb = function hue2rgb(p, q, t){
+            if(t < 0) t += 1;
+            if(t > 1) t -= 1;
+            if(t < 1/6) return p + (q - p) * 6 * t;
+            if(t < 1/2) return q;
+            if(t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+            return p;
+        };
+
+        let q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        let p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1/3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1/3);
+    };
+    return [r, g, b];
+}
 
 
 // compute homogeneous rotation matrix
@@ -96,7 +145,7 @@ function randomTranslate(tempTranslation, tempRotation, translationSpeed) {
 	const translationDiff = vec3(rotatedUniVec[0], rotatedUniVec[1], rotatedUniVec[2]);
 	return add(tempTranslation, translationDiff);
 };
-//
+
 // construct a sphere with radius r, where latitude splits into lSize, and longitude splits into bSize + 2
 // (float(0, inf), int[3, inf), int[1, inf)) => Array(vec3(x, y, z))
 function getSphere(r, lSize, bSize) {
@@ -162,12 +211,12 @@ function getFireflyModel(sizeFirefly) {
 	// body //heading to x+
 	const bodyPosition = [[
 			vec3(0, 0, 0),
-			vec3(-sizeFirefly * Math.sqrt(8), -sizeFirefly * Math.sqrt(3) / 3, -sizeFirefly),
+			vec3(-sizeFirefly * Math.sqrt(3), -sizeFirefly * Math.sqrt(3) / 3, -sizeFirefly),
 			vec3(-sizeFirefly * Math.sqrt(3), -sizeFirefly * Math.sqrt(3) / 3, sizeFirefly),
 			vec3(-sizeFirefly * Math.sqrt(3), sizeFirefly * 2 * Math.sqrt(3) / 3, 0)
 			],[
 			vec3(0, 0, 0),
-			vec3(sizeFirefly * Math.sqrt(8), sizeFirefly * Math.sqrt(3) / 3, sizeFirefly),
+			vec3(sizeFirefly * Math.sqrt(3), sizeFirefly * Math.sqrt(3) / 3, sizeFirefly),
 			vec3(sizeFirefly * Math.sqrt(3), sizeFirefly * Math.sqrt(3) / 3, -sizeFirefly),
 			vec3(sizeFirefly * Math.sqrt(3), -sizeFirefly * 2 * Math.sqrt(3) / 3, 0)
 			]
@@ -211,7 +260,7 @@ function getGlowModel(sizeGlow) {
 	const glowColor = vec3(0.9, 0.9, 0);
 
 	positionsGlow = getSphere(sizeGlow, lSizeGlow, bSizeGlow);
-	colorsGlow = Array(positionsGlow.length).fill(glowColor);
+	// colorsGlow = Array(positionsGlow.length).fill(glowColor);
 	return;
 }
 
@@ -233,8 +282,19 @@ function checkBoundary(tempTranslation, margin) {
 	return false;
 };
 
+// check if tempTranslation is inside [+- margin, +- margin, +- margin]
+// (vec3(x, y, z), float[0, 0.3)) => Boolean{true: in, false: out}
+function checkInnerBoundary(tempTranslation, margin) {
+	for (let idx = tempTranslation.length - 1; idx >= 0; idx --) {
+		if (tempTranslation[idx] > margin || tempTranslation[idx] < -margin) {
+			return false;
+		};
+	};
+	return true;
+};
+
 // check if tempTranslation collides with others in translationList, where index(tempTranslation) is tempIdx
-// (vec3(x, y, z), Array[vec3], int[0, lenght - 1), float[0, 0.3)) => Boolean{true: collision, flase: safe}
+// (vec3(x, y, z), Array[vec3], int[0, length - 1), float[0, 0.3)) => Boolean{true: collision, false: safe}
 function checkCollision(tempTranslation, translationList, tempIdx, margin) {
 	for (let idx = translationFirefly.length - 1; idx >= 0; idx --) {
 		if (idx === tempIdx) {
@@ -247,31 +307,27 @@ function checkCollision(tempTranslation, translationList, tempIdx, margin) {
 	return false;
 };
 
-//check if tempClock is glowing
-// float[0, Math.PI) => Boolean{true: glowing, false: dark}
-function checkGlow(tempClock) {
-	const glowHalfRange = 0.05;
-	if ((tempClock + glowHalfRange) % Math.PI < glowHalfRange * 2) {
-		return true;
-	};
-	return false;
+//check if tempGLow is glowing
+// Boolean => Boolean{true: dark, false: glowing}
+function checkNotGlow(tempGLow) {
+	return !tempGLow
 }
 
-//check how many translationList neighbors in margin distance satisfy conditionFunction, given condistionList
-// (vec3(x, y, z), Array[vec3], int[0, lenght - 1), float[0, 0.3), Array(object), function(object)) => int[0, length - 2]
+//check translationList neighbors in margin distance satisfy conditionFunction, given condistionList
+// (vec3(x, y, z), Array[vec3], int[0, length - 1), float[0, 0.3), Array(object), function(object)) => Array[idx]
 function checkConditioningNeighbor(tempTranslation, translationList, tempIdx, margin, conditionList, conditionFunction) {
-	let count = 0;
+	let idxList = [];
 	for (let idx = translationFirefly.length - 1; idx >= 0; idx --) {
 		if (idx === tempIdx) {
 			continue;
 		};
 		if (conditionFunction(conditionList[idx])) {
 			if (getDistance(tempTranslation, translationFirefly[idx]) < margin) {
-				count ++;
+				idxList.push(idx)
 			};
 		};
 	};
-	return count;
+	return idxList
 };
 
 // update rotationFirefly
@@ -292,6 +348,9 @@ function updateFireflyTranslation() {
 	translationFirefly.forEach((tempTranslation, idx) => {
 		const nextTranslation = randomTranslate(tempTranslation, rotationFirefly[idx], translationSpeed);
 		if (checkBoundary(nextTranslation, boundaryMargin)) {
+			// out of boundary, turn back
+			rotationFirefly[idx] = vec3(rotationFirefly[idx][0], rotationFirefly[idx][1], 180 + rotationFirefly[idx][2]);
+		} else if (checkInnerBoundary(nextTranslation, 0.1 + boundaryMargin)) {
 			// out of boundary, turn back
 			rotationFirefly[idx] = vec3(rotationFirefly[idx][0], rotationFirefly[idx][1], 180 + rotationFirefly[idx][2]);
 		} else if (checkCollision(nextTranslation, translationFirefly, idx, collisionMargin)) {
@@ -319,22 +378,34 @@ function updateFireflyTranspose(count) {
 // update glow clock
 // void => void
 function updateGlowClock() {
-	const clockSpeed = 0.02;
-	const nudgeRange = sizeFirefly * 8;
-	const nudgeSpeed = 0.001;
-	const glowHalfRange = 0.05;
-	const glowStart = Math.PI - glowHalfRange;
+	const clockGlowSpeed = 0.05;
+	const nudgeRange = sizeFirefly * nudgeRangeFactor;
+	const nudgeSpeed = 0.001 * nudgeSpeedFactor;
 
-	clockGlow.forEach((clock, idx) => {
-		// auto ++
-		clockGlow[idx] = (clock + clockSpeed) % Math.PI;
-		if (clockGlow[idx] < glowStart && clockGlow[idx] > glowHalfRange) {
-			// nudge
-			let count = checkConditioningNeighbor(translationGlow[idx], translationGlow, idx, nudgeRange, clockGlow, checkGlow);
-			if (count) {
-				clockGlow[idx] += (count * nudgeSpeed) % Math.PI;
-				// nudge at most to the next cycle start
-				clockGlow[idx] = Math.min(clockGlow[idx], glowHalfRange);
+	clockFirefly.forEach((clock, idx) => {
+		if (flagGlow[idx]) {
+			//glowing, increase glow clock
+			clockGlow[idx] += clockGlowSpeed;
+			if (clockGlow[idx] >= 1) {
+				//ending of glow
+				clockGlow[idx] = 1;
+				clockFirefly[idx] = 0;
+				flagGlow[idx] = false;
+			};
+		} else {
+			//not glowing, increase firefly clock
+			clockFirefly[idx] += clockFireflySpeed;
+			if (clockFirefly[idx] >= 1) {
+				//starting of glow
+				clockGlow[idx] = 0;
+				clockFirefly[idx] = 1;
+				flagGlow[idx] = true;
+
+				//nudge neighbors
+				let idxList = checkConditioningNeighbor(translationGlow[idx], translationGlow, idx, nudgeRange, flagGlow, checkNotGlow);
+				idxList.forEach((index, indexIdx) => {
+					clockFirefly[index] += nudgeSpeed;
+				});
 			};
 		};
 	});
@@ -352,12 +423,44 @@ function updateAll(count) {
 	updateGlowClock();
 	setTimeout(() => updateAll((count + 1) % fireflyRotationSlowDownRatio), frameSpeedMS); //update here to avoid frame rate influence
 	return;
-}
+};
 
 
 //
 // init functions
 //
+
+// fill fireflies from tempNumFirefly to numFirefly
+// int [0, numFirefly) => void
+function appendFirefly(tempNumFirefly) {
+	const fireflyTranslationHalfRange = 1 - 10 * sizeFirefly;
+	const fireflyTranslationRange = 2 * fireflyTranslationHalfRange;
+	const collisionMargin = sizeFirefly * 6;
+	const innerBoundaryMargin = sizeFirefly * 8;
+	while (tempNumFirefly < numFirefly) {
+		//translation
+		let tempTranslationFirefly;
+		do {
+			do {
+				tempTranslationFirefly = vec3(
+					Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange,
+					Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange,
+					Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange
+					);
+			} while (checkInnerBoundary(tempTranslationFirefly, 0.15 + innerBoundaryMargin));
+		} while (checkCollision(tempTranslationFirefly, translationFirefly, tempNumFirefly, collisionMargin));
+		translationFirefly.push(tempTranslationFirefly);
+
+		//rotation
+		const tempYaw = Math.random() * 360;
+		const tempPitch = Math.random() * 180 - 90;
+		const tempRow = Math.random() * 180 - 90;
+		rotationFirefly.push(vec3(tempRow, tempPitch, tempYaw));
+
+		tempNumFirefly ++;
+	};
+	return;
+};
 
 // construct fireflies
 // void => void
@@ -368,54 +471,64 @@ function buildFirefly() {
 	// firefly transpose
 	translationFirefly.length = 0;
 	rotationFirefly.length = 0;
-	numFirefly = Math.max(4, Math.min(document.getElementById("numFirefly").value, 512));
-	document.getElementById("numFirefly").value = numFirefly;
-
-	let tempNumFirefly = 0;
-	// translation
-	const fireflyTranslationHalfRange = 1 - 10 * sizeFirefly;
-	const fireflyTranslationRange = 2 * fireflyTranslationHalfRange;
-	const collisionMargin = sizeFirefly * 6;
-	while (tempNumFirefly < numFirefly) {
-		let tempTranslationFirefly;
-		do {
-			tempTranslationFirefly = vec3(
-				Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange,
-				Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange,
-				Math.random() * fireflyTranslationRange - fireflyTranslationHalfRange
-				);
-		} while (checkCollision(tempTranslationFirefly, translationFirefly, tempNumFirefly, collisionMargin));
-		translationFirefly.push(tempTranslationFirefly);
-		tempNumFirefly ++;
-	};
-	//rotation
-	for (let i = 0; i < numFirefly; i ++) {
-		const tempYaw = Math.random() * 360;
-		const tempPitch = Math.random() * 180 - 90;
-		const tempRow = Math.random() * 180 - 90;
-		rotationFirefly.push(vec3(tempRow, tempPitch, tempYaw));
-	};
-
+	
+	appendFirefly(0);
 	return;
+};
+
+// fill glows from tempNumFirefly to numFirefly
+// int [0, numFirefly) => void
+function appendGlow(tempNumFirefly) {
+	while (tempNumFirefly < numFirefly) {
+		clockFirefly.push(Math.random());
+		clockGlow.push(1);
+		tempNumFirefly ++;
+	}
 };
 
 // construct glows
 // void => void
 function buildGlow() {
-	nudgeRange = Math.max(4, Math.min(document.getElementById("nudgeRange").value, 64));
-	document.getElementById("nudgeRange").value = nudgeRange;
-
 	getGlowModel(4 * sizeFirefly);
 
 	clockGlow.length = 0;
+	clockFirefly.length = 0;
 	translationGlow = translationFirefly;
 	rotationGlow = rotationFirefly;
 
-	for (let i = numFirefly - 1; i >= 0; i --) {
-		clockGlow.push(Math.random() * Math.PI);
-	};
+	appendGlow(0);
 	return;
-}
+};
+
+// update fireflies (and glows) to the numFirefly
+// void => void
+function updateNumFirefly() {
+	if (!resetFlag) {
+		if (numFirefly < translationFirefly.length) {
+			translationFirefly.length = numFirefly;
+			rotationFirefly.length = numFirefly;
+			clockFirefly.length = numFirefly;
+			translationGlow.length = numFirefly;
+			rotationGlow.length = numFirefly;
+			clockGlow.length = numFirefly;
+			flagGlow.length = numFirefly;
+		} else if (numFirefly > positionsFirefly.length) {
+			const tempNumFirefly = translationFirefly.length;
+			appendFirefly(tempNumFirefly);
+			appendGlow(tempNumFirefly);
+		}
+	}
+	return;
+};
+
+// construct perspective projection with given fov
+// int[30, 150] => void
+function buildCamera(fov) {
+	const [aspect, near, far] = [1, 0.1, 1];
+	projectionMat = perspective(fov, aspect, near, far);
+	return;
+};
+
 
 // init shaders, bind buffers and send models
 // void => void
@@ -445,17 +558,11 @@ function initDrawing() {
 	gl.enableVertexAttribArray(positionLocFirefly);
 
 	transposeFireflyLoc = gl.getUniformLocation(programFirefly, "transposeFirefly");
+	projectionFireflyLoc = gl.getUniformLocation(programFirefly, "projectionFirefly");
 
 
 	// glow
 	gl.useProgram(programGlow);
-
-	cBufferGlow = gl.createBuffer();
-	gl.bindBuffer(gl.ARRAY_BUFFER, cBufferGlow);
-	gl.bufferData(gl.ARRAY_BUFFER, flatten(colorsGlow), gl.STATIC_DRAW);
-
-	colorLocGlow = gl.getAttribLocation(programGlow, "aColorGlow");
-	gl.enableVertexAttribArray(colorLocGlow);
 
 	vBufferGlow = gl.createBuffer();
 	gl.bindBuffer(gl.ARRAY_BUFFER, vBufferGlow);
@@ -465,19 +572,22 @@ function initDrawing() {
 	gl.enableVertexAttribArray(positionLocGlow);
 
 	transposeGlowLoc = gl.getUniformLocation(programGlow, "transposeGlow");
+	colorGlowLoc = gl.getUniformLocation(programGlow, "colorGlow");
 	alphaGlowLoc = gl.getUniformLocation(programGlow, "alphaGlow");
 	scaleGlowLoc = gl.getUniformLocation(programGlow, "scaleGlow");
+	projectionGlowLoc = gl.getUniformLocation(programGlow, "projectionGlow");
 
 	render();
 	return;
 };
 
-// reset drawing. response to button "Reset!"
+// reset drawing. response to button "Refresh!"
 // void => void
 function buildAllDrawAll() {
 	resetFlag = true;
 	buildFirefly();
 	buildGlow();
+	buildCamera(fov);
 
 	setTimeout(() => {
 		resetFlag = false;
@@ -489,16 +599,173 @@ function buildAllDrawAll() {
 	return;
 };
 
+// reset to defualt config, response to button "Default Config."
+// void => void
+function useDefaultConfig() {
+	perspectiveFlag = false;
+	cameraMat = mat4();
+	cameraRotation = vec3(0, 0, 0);
+
+	numFirefly = 256;
+	document.getElementById("numFirefly").value = numFirefly;
+	document.getElementById("numFireflyValue").textContent = `#firefly: ${numFirefly}`;
+	updateNumFirefly();
+
+	colorGlowHue = 60;
+	document.getElementById("colorGlowHue").value = colorGlowHue;
+	document.getElementById("colorGlowHueValue").textContent = `glowing hue: ${colorGlowHue}`;
+	colorGlow = hslToRgb(colorGlowHue / 360, colorGlowSaturation, colorGlowLightness);
+
+	glowSizeFactor = 100;
+	document.getElementById("glowSize").value = glowSizeFactor;
+	document.getElementById("glowSizeValue").textContent = `glowing size: ${glowSizeFactor}`;
+	glowSize = glowSizeFactor / 100;
+
+	glowFrequencyFactor = 8;
+	document.getElementById("glowFrequency").value = glowFrequencyFactor;
+	document.getElementById("glowFrequencyValue").textContent = `glowing frequency: ${glowFrequencyFactor}`;
+	clockFireflySpeed = glowFrequencyFactor / 1000;
+
+	nudgeRangeFactor = 16;
+	document.getElementById("nudgeRangeFactor").value = nudgeRangeFactor;
+	document.getElementById("nudgeRangeFactorValue").textContent = `nudge range: ${nudgeRangeFactor}`;
+
+	nudgeSpeedFactor = 8;
+	document.getElementById("nudgeSpeedFactor").value = nudgeSpeedFactor;
+	document.getElementById("nudgeSpeedFactorValue").textContent = `nudge amount: ${nudgeSpeedFactor}`;
+
+	fov = 90;
+	document.getElementById("fov").value = fov;
+	document.getElementById("fovValue").textContent = `first person FOV: ${fov}`;
+	buildCamera(fov);
+	return;
+};
+
+// switch between first person / third person view, response to button "switch view"
+// void => void
+function switchView() {
+	perspectiveFlag = !perspectiveFlag;
+	if (perspectiveFlag) {
+		cameraMat = mult(projectionMat, getRotationMat(cameraRotation));
+	} else {
+		cameraMat = mat4();
+	};
+	return;
+};
+
 
 // init the whole program
 // void => void
 window.onload = function init() {
 	const canvas = document.getElementById("gl-canvas");
-	canvas.width = window.innerWidth - 100;
-	canvas.height = window.innerHeight - 100;
+	canvas.width = 800;
+	canvas.height = 800;
 	const viewSize = Math.min(canvas.width, canvas.height);
 	// const viewXPos = canvas.width - viewSize; // no need, because it should be left-aligned
 	const viewYPos = canvas.height - viewSize;
+
+	//menu
+	document.getElementById("numFirefly").value = numFirefly;
+	document.getElementById("numFireflyValue").textContent = `#firefly: ${numFirefly}`;
+	document.getElementById("numFirefly").oninput = function() {
+		numFirefly = this.value;
+		document.getElementById("numFireflyValue").textContent = `#firefly: ${numFirefly}`;
+		updateNumFirefly();
+		return;
+	};
+
+	document.getElementById("colorGlowHue").value = colorGlowHue;
+	document.getElementById("colorGlowHueValue").textContent = `glowing hue: ${colorGlowHue}`;
+	document.getElementById("colorGlowHue").oninput = function() {
+		colorGlowHue = this.value;
+		document.getElementById("colorGlowHueValue").textContent = `glowing hue: ${colorGlowHue}`;
+		colorGlow = hslToRgb(colorGlowHue / 360, colorGlowSaturation, colorGlowLightness);
+		return;
+	};
+
+	document.getElementById("glowSize").value = glowSizeFactor;
+	document.getElementById("glowSizeValue").textContent = `glowing size: ${glowSizeFactor}`;
+	document.getElementById("glowSize").oninput = function() {
+		glowSizeFactor = this.value;
+		document.getElementById("glowSizeValue").textContent = `glowing size: ${glowSizeFactor}`;
+		glowSize = glowSizeFactor / 100;
+		return;
+	};
+
+	document.getElementById("glowFrequency").value = glowFrequencyFactor;
+	document.getElementById("glowFrequencyValue").textContent = `glowing frequency: ${glowFrequencyFactor}`;
+	document.getElementById("glowFrequency").oninput = function() {
+		glowFrequencyFactor = this.value;
+		document.getElementById("glowFrequencyValue").textContent = `glowing frequency: ${glowFrequencyFactor}`;
+		clockFireflySpeed = glowFrequencyFactor / 1000;
+		return;
+	};
+
+	document.getElementById("nudgeRangeFactor").value = nudgeRangeFactor;
+	document.getElementById("nudgeRangeFactorValue").textContent = `nudge range: ${nudgeRangeFactor}`;
+	document.getElementById("nudgeRangeFactor").oninput = function() {
+		nudgeRangeFactor = this.value;
+		document.getElementById("nudgeRangeFactorValue").textContent = `nudge range: ${nudgeRangeFactor}`;
+		return;
+	};
+
+	document.getElementById("nudgeSpeedFactor").value = nudgeSpeedFactor;
+	document.getElementById("nudgeSpeedFactorValue").textContent = `nudge amount: ${nudgeSpeedFactor}`;
+	document.getElementById("nudgeSpeedFactor").oninput = function() {
+		nudgeSpeedFactor = this.value;
+		document.getElementById("nudgeSpeedFactorValue").textContent = `nudge amount: ${nudgeSpeedFactor}`;
+		return;
+	};
+
+	document.getElementById("fov").value = fov;
+	document.getElementById("fovValue").textContent = `first person FOV: ${fov}`;
+	document.getElementById("fov").oninput = function() {
+		fov = this.value;
+		document.getElementById("fovValue").textContent = `first person FOV: ${fov}`;
+		buildCamera(fov);
+		if (perspectiveFlag) {
+			cameraMat = mult(projectionMat, getRotationMat(cameraRotation));
+		};
+		return;
+	};
+
+	//keyboard interaction
+	window.onkeydown = function(event) {
+		const key = event.keyCode;
+		const cameraSpeed = 4
+		switch(key) {
+			case 87: // up
+				if (perspectiveFlag) {
+					cameraRotation[0] += (360 - cameraSpeed)
+					cameraRotation[0] %= 360;
+					cameraMat = mult(projectionMat, getRotationMat(cameraRotation));
+				}
+				break;
+			case 83: // down
+				if (perspectiveFlag) {
+					cameraRotation[0] += cameraSpeed
+					cameraRotation[0] %= 360;
+					cameraMat = mult(projectionMat, getRotationMat(cameraRotation));
+				}
+				break;
+			case 65: // left
+				if (perspectiveFlag) {
+					cameraRotation[1] += (360 - cameraSpeed)
+					cameraRotation[1] %= 360;
+					cameraMat = mult(projectionMat, getRotationMat(cameraRotation));
+				}
+				break;
+			case 68: // right
+				if (perspectiveFlag) {
+					cameraRotation[1] += cameraSpeed
+					cameraRotation[1] %= 360;
+					cameraMat = mult(projectionMat, getRotationMat(cameraRotation));
+				}
+				break;
+		};
+		return;
+	};
+
 
 	gl = canvas.getContext('webgl2');
 	if (!gl) alert( "WebGL 2.0 isn't available" );
@@ -535,7 +802,7 @@ function render() {
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
 		// draw fireflies
-		for (let i = 0; i < numFirefly; i ++) {
+		for (let i = clockFirefly.length - 1; i >= 0; i --) {
 			//
 			// non-transparent part
 			//
@@ -551,6 +818,7 @@ function render() {
 			// compute transpose matrix as uniform variable
 			const transposeMat = getTransposeMat(rotationFirefly[i], translationFirefly[i])
 			gl.uniformMatrix4fv(transposeFireflyLoc, false, flatten(transposeMat));
+			gl.uniformMatrix4fv(projectionFireflyLoc, false, flatten(cameraMat));
 
 			gl.drawArrays(gl.TRIANGLES, 0, positionsFirefly.length);
 
@@ -561,19 +829,21 @@ function render() {
 			// for each glow, use glow model
 			gl.depthMask(false);
 			gl.useProgram(programGlow);
-			gl.bindBuffer(gl.ARRAY_BUFFER, cBufferGlow);
-			gl.vertexAttribPointer(colorLocGlow, 3, gl.FLOAT, false, 0, 0);
+			// gl.bindBuffer(gl.ARRAY_BUFFER, cBufferGlow);
+			// gl.vertexAttribPointer(colorLocGlow, 3, gl.FLOAT, false, 0, 0);
 			gl.bindBuffer(gl.ARRAY_BUFFER, vBufferGlow);
 			gl.vertexAttribPointer(positionLocGlow, 3, gl.FLOAT, false, 0, 0);
 
 			// compute transpose matrix as uniform variable
 			// // const transposeMat = getTransposeMat(rotationGlow[i], translationGlow[i]) // same transportation
 			gl.uniformMatrix4fv(transposeGlowLoc, false, flatten(transposeMat));
-			// compute glow factor using cos^16(x)
-			const glowFactor = Math.pow(Math.cos(clockGlow[i]), 32);
+			gl.uniformMatrix4fv(projectionGlowLoc, false, flatten(cameraMat));
+			// compute glow factor using (1 - x) ^ 2
+			const glowFactor = Math.pow(( 1 - clockGlow[i]), 2);
 			gl.uniform1f(alphaGlowLoc, glowFactor / 4);
-			const scaleGlowMat = scale(glowFactor, glowFactor, glowFactor);
+			const scaleGlowMat = scale(glowFactor * glowSize, glowFactor * glowSize, glowFactor * glowSize);
 			gl.uniformMatrix4fv(scaleGlowLoc, false, flatten(scaleGlowMat));
+			gl.uniform3fv(colorGlowLoc, colorGlow);
 
 			gl.drawArrays(gl.TRIANGLES, 0, positionsGlow.length);
 
