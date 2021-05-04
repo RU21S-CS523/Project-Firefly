@@ -52,7 +52,7 @@ let glowSize = glowSizeFactor / 100;
 let glowFrequencyFactor = 8;
 let clockFireflySpeed = glowFrequencyFactor / 1000;
 
-let nudgeRangeFactor = 16;
+let nudgeRangeFactor = 32;
 let nudgeSpeedFactor = 8;
 
 let projectionMat = mat4();
@@ -626,7 +626,7 @@ function useDefaultConfig() {
 	document.getElementById("glowFrequencyValue").textContent = `glowing frequency: ${glowFrequencyFactor}`;
 	clockFireflySpeed = glowFrequencyFactor / 1000;
 
-	nudgeRangeFactor = 16;
+	nudgeRangeFactor = 32;
 	document.getElementById("nudgeRangeFactor").value = nudgeRangeFactor;
 	document.getElementById("nudgeRangeFactorValue").textContent = `nudge range: ${nudgeRangeFactor}`;
 
@@ -638,6 +638,13 @@ function useDefaultConfig() {
 	document.getElementById("fov").value = fov;
 	document.getElementById("fovValue").textContent = `first person FOV: ${fov}`;
 	buildCamera(fov);
+
+	document.getElementById("cameraYaw").value = cameraRotation[1];
+	document.getElementById("cameraYawValue").textContent = `first person camera yaw: ${cameraRotation[1]}`;
+
+	document.getElementById("cameraPitch").value = -cameraRotation[0];
+	document.getElementById("cameraPitchValue").textContent = `first person camera pitch: ${-cameraRotation[0]}`;
+
 	return;
 };
 
@@ -668,7 +675,7 @@ window.onload = function init() {
 	document.getElementById("numFirefly").value = numFirefly;
 	document.getElementById("numFireflyValue").textContent = `#firefly: ${numFirefly}`;
 	document.getElementById("numFirefly").oninput = function() {
-		numFirefly = this.value;
+		numFirefly = parseInt(this.value);
 		document.getElementById("numFireflyValue").textContent = `#firefly: ${numFirefly}`;
 		updateNumFirefly();
 		return;
@@ -677,7 +684,7 @@ window.onload = function init() {
 	document.getElementById("colorGlowHue").value = colorGlowHue;
 	document.getElementById("colorGlowHueValue").textContent = `glowing hue: ${colorGlowHue}`;
 	document.getElementById("colorGlowHue").oninput = function() {
-		colorGlowHue = this.value;
+		colorGlowHue = parseInt(this.value);
 		document.getElementById("colorGlowHueValue").textContent = `glowing hue: ${colorGlowHue}`;
 		colorGlow = hslToRgb(colorGlowHue / 360, colorGlowSaturation, colorGlowLightness);
 		return;
@@ -686,7 +693,7 @@ window.onload = function init() {
 	document.getElementById("glowSize").value = glowSizeFactor;
 	document.getElementById("glowSizeValue").textContent = `glowing size: ${glowSizeFactor}`;
 	document.getElementById("glowSize").oninput = function() {
-		glowSizeFactor = this.value;
+		glowSizeFactor = parseInt(this.value);
 		document.getElementById("glowSizeValue").textContent = `glowing size: ${glowSizeFactor}`;
 		glowSize = glowSizeFactor / 100;
 		return;
@@ -695,7 +702,7 @@ window.onload = function init() {
 	document.getElementById("glowFrequency").value = glowFrequencyFactor;
 	document.getElementById("glowFrequencyValue").textContent = `glowing frequency: ${glowFrequencyFactor}`;
 	document.getElementById("glowFrequency").oninput = function() {
-		glowFrequencyFactor = this.value;
+		glowFrequencyFactor = parseInt(this.value);
 		document.getElementById("glowFrequencyValue").textContent = `glowing frequency: ${glowFrequencyFactor}`;
 		clockFireflySpeed = glowFrequencyFactor / 1000;
 		return;
@@ -704,7 +711,7 @@ window.onload = function init() {
 	document.getElementById("nudgeRangeFactor").value = nudgeRangeFactor;
 	document.getElementById("nudgeRangeFactorValue").textContent = `nudge range: ${nudgeRangeFactor}`;
 	document.getElementById("nudgeRangeFactor").oninput = function() {
-		nudgeRangeFactor = this.value;
+		nudgeRangeFactor = parseInt(this.value);
 		document.getElementById("nudgeRangeFactorValue").textContent = `nudge range: ${nudgeRangeFactor}`;
 		return;
 	};
@@ -712,7 +719,7 @@ window.onload = function init() {
 	document.getElementById("nudgeSpeedFactor").value = nudgeSpeedFactor;
 	document.getElementById("nudgeSpeedFactorValue").textContent = `nudge amount: ${nudgeSpeedFactor}`;
 	document.getElementById("nudgeSpeedFactor").oninput = function() {
-		nudgeSpeedFactor = this.value;
+		nudgeSpeedFactor = parseInt(this.value);
 		document.getElementById("nudgeSpeedFactorValue").textContent = `nudge amount: ${nudgeSpeedFactor}`;
 		return;
 	};
@@ -720,9 +727,31 @@ window.onload = function init() {
 	document.getElementById("fov").value = fov;
 	document.getElementById("fovValue").textContent = `first person FOV: ${fov}`;
 	document.getElementById("fov").oninput = function() {
-		fov = this.value;
+		fov = parseInt(this.value);
 		document.getElementById("fovValue").textContent = `first person FOV: ${fov}`;
 		buildCamera(fov);
+		if (perspectiveFlag) {
+			cameraMat = mult(projectionMat, getRotationMat(cameraRotation));
+		};
+		return;
+	};
+
+	document.getElementById("cameraYaw").value = cameraRotation[1];
+	document.getElementById("cameraYawValue").textContent = `first person camera yaw: ${cameraRotation[1]}`;
+	document.getElementById("cameraYaw").oninput = function() {
+		cameraRotation[1] = parseInt(this.value);
+		document.getElementById("cameraYawValue").textContent = `first person camera yaw: ${cameraRotation[1]}`;
+		if (perspectiveFlag) {
+			cameraMat = mult(projectionMat, getRotationMat(cameraRotation));
+		};
+		return;
+	};
+
+	document.getElementById("cameraPitch").value = -cameraRotation[0];
+	document.getElementById("cameraPitchValue").textContent = `first person camera pitch: ${-cameraRotation[0]}`;
+	document.getElementById("cameraPitch").oninput = function() {
+		cameraRotation[0] = -parseInt(this.value);
+		document.getElementById("cameraPitchValue").textContent = `first person camera pitch: ${-cameraRotation[0]}`;
 		if (perspectiveFlag) {
 			cameraMat = mult(projectionMat, getRotationMat(cameraRotation));
 		};
@@ -732,35 +761,57 @@ window.onload = function init() {
 	//keyboard interaction
 	window.onkeydown = function(event) {
 		const key = event.keyCode;
-		const cameraSpeed = 4
+		const cameraSpeed = 1
 		switch(key) {
-			case 87: // up
+			case 87: // w
 				if (perspectiveFlag) {
-					cameraRotation[0] += (360 - cameraSpeed)
-					cameraRotation[0] %= 360;
+					if (cameraRotation[0] <= -90){
+						cameraRotation[0] = -90;
+					} else {
+						cameraRotation[0] -= cameraSpeed; //reverse for inverse
+						cameraRotation[0] %= 360;
+					};
 					cameraMat = mult(projectionMat, getRotationMat(cameraRotation));
-				}
+					document.getElementById("cameraPitch").value = -cameraRotation[0];
+					document.getElementById("cameraPitchValue").textContent = `first person camera pitch: ${-cameraRotation[0]}`;
+				};
 				break;
-			case 83: // down
+			case 83: // s
 				if (perspectiveFlag) {
-					cameraRotation[0] += cameraSpeed
-					cameraRotation[0] %= 360;
+					if (cameraRotation[0] > 90) {
+						cameraRotation[0] = 90;
+					} else {
+						cameraRotation[0] += cameraSpeed; //reverse for inverse
+						cameraRotation[0] %= 360;
+					};
 					cameraMat = mult(projectionMat, getRotationMat(cameraRotation));
-				}
+					document.getElementById("cameraPitch").value = -cameraRotation[0];
+					document.getElementById("cameraPitchValue").textContent = `first person camera pitch: ${-cameraRotation[0]}`;
+				};
 				break;
-			case 65: // left
+			case 65: // a
 				if (perspectiveFlag) {
-					cameraRotation[1] += (360 - cameraSpeed)
+					cameraRotation[1] -= cameraSpeed; //reverse for inverse
 					cameraRotation[1] %= 360;
+					if (cameraRotation[1] < -180) {
+						cameraRotation[1] += 360;
+					};
 					cameraMat = mult(projectionMat, getRotationMat(cameraRotation));
-				}
+					document.getElementById("cameraYaw").value = cameraRotation[1];
+					document.getElementById("cameraYawValue").textContent = `first person camera yaw: ${cameraRotation[1]}`;
+				};
 				break;
-			case 68: // right
+			case 68: // d
 				if (perspectiveFlag) {
-					cameraRotation[1] += cameraSpeed
+					cameraRotation[1] += cameraSpeed; //reverse for inverse
 					cameraRotation[1] %= 360;
+					if (cameraRotation[1] > 180) {
+						cameraRotation[1] -= 360;
+					};
 					cameraMat = mult(projectionMat, getRotationMat(cameraRotation));
-				}
+					document.getElementById("cameraYaw").value = cameraRotation[1];
+					document.getElementById("cameraYawValue").textContent = `first person camera yaw: ${cameraRotation[1]}`;
+				};
 				break;
 		};
 		return;
